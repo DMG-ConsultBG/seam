@@ -66,11 +66,28 @@ DOCS = [
 SIZES = [("desktop", 1280, 800, False), ("mobile", 390, 844, True)]
 
 
+def set_language(b, base, lang):
+    """Make the interface actually come up in `lang`.
+
+    Setting the cookie is not enough and never was: the browser chooses its
+    language from localStorage (see detectLang in i18n.js), and the cookie
+    exists only so the *server* returns demo content to match. Screenshots
+    named "-en" were therefore Bulgarian, all of them, which is the kind of
+    thing nobody notices until somebody outside the country opens them.
+
+    localStorage has to be set before the app boots, so this loads the page,
+    writes it, and loads again.
+    """
+    b.go(base + "/", settle=0.4)
+    b.js("localStorage.setItem('seam_lang', '%s');"
+         "document.cookie = 'seam_lang=%s; path=/;max-age=31536000'" % (lang, lang))
+    b.go(base + "/", settle=0.8)
+
+
 def login(b, base, lang, who=DEMO):
     """Sign in inside the page, so the session cookie belongs to the browser
     rather than to a script holding it at arm's length."""
-    b.go(base + "/", settle=0.6)
-    b.js("document.cookie = 'seam_lang=%s; path=/'" % lang)
+    set_language(b, base, lang)
     out = b.js("""
       (async () => {
         const me = await (await fetch('/api/me')).json().catch(() => ({}));
@@ -126,7 +143,8 @@ def capture(base, lang, outdir, only=None):
                     continue
                 b.go(base + "/" + route, settle=0.5)
                 b.wait_for(needs)
-                b.js("document.cookie = 'seam_lang=%s; path=/'" % lang)
+                b.js("localStorage.setItem('seam_lang', '%s');"
+                     "document.cookie = 'seam_lang=%s; path=/'" % (lang, lang))
                 b.go(base + "/" + route, settle=0.4)
                 b.wait_for(needs)
                 time.sleep(1.0)

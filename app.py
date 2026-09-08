@@ -5095,8 +5095,14 @@ def analytics():
                                 "status_label": tpl_stage_label(conn, o["template"], o["status"]),
                                 "days": age})
 
+        # The template travels with the row. Without it the browser has a stage
+        # key and no way to know which template's vocabulary it belongs to, so
+        # it fell back to printing this label - which is the Bulgarian source
+        # string, and appeared verbatim on the analytics screen in all twelve
+        # other languages.
         label = tpl_stage_label(conn, o["template"], o["status"])
-        st = by_status.setdefault(o["status"], {"key": o["status"], "label": label, "count": 0})
+        st = by_status.setdefault(o["status"], {"key": o["status"], "label": label,
+                                                "template": o["template"], "count": 0})
         st["count"] += 1
         # The key travels; the frontend localizes it through tplLabel().
         tp = by_template.setdefault(o["template"], {
@@ -12628,6 +12634,11 @@ def _pay_settings(org):
     get = lambda c: ((org[c] if c in k else "") or "")            # noqa: E731
     return {"iban": get("pay_iban"), "bic": get("pay_bic"), "bank": get("pay_bank"),
             "terms": get("pay_terms") or "14", "link": get("pay_link"),
+            # Belongs here rather than on one endpoint. It used to be added by
+            # /api/pay-settings alone, while the money screen reads /api/invoices
+            # - so `mail_on` was undefined there, and "mail is not set up" showed
+            # on every instance for ever, including ones where it was.
+            "mail_on": mailer.enabled(),
             "reminders": receivables.reminder_plan(get("remind_json"))}
 
 
@@ -12638,7 +12649,6 @@ def pay_settings_get():
     org = user_primary_org(conn, user["id"])
     out = _pay_settings(org)
     out["can_edit"] = bool(org) and org_role(conn, user["id"], org["id"]) in ("owner", "admin")
-    out["mail_on"] = mailer.enabled()
     return jsonify(out)
 
 

@@ -4359,7 +4359,9 @@ async function viewAnalytics() {
 
     <div class="section-title">${esc(t("an_by_stage"))}</div>
     <div class="card pad">
-      ${a.status.length ? barChartH(a.status, (r) => r.label) : `<div class="an-empty">${esc(t("an_empty"))}</div>`}
+      ${a.status.length
+        ? barChartH(a.status, (r) => tplStage(r.template, r.key, r.label))
+        : `<div class="an-empty">${esc(t("an_empty"))}</div>`}
     </div>
 
     <div class="an-grid" style="margin-top:16px">
