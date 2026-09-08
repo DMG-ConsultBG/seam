@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"
+     role="img" aria-label="Seam">
+  <title>Seam</title>
+
+  <!-- A seam is what joins two pieces that stay two pieces. The mark is the
+       product: two companies facing each other, and the stitched line down the
+       middle where they meet. Drawn at 256 rather than scaled up from the
+       32px favicon, so the weights are right at this size. -->
+  <defs>
+    <linearGradient id="seamBg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3f7bff"/>
+      <stop offset="1" stop-color="#2552c8"/>
+    </linearGradient>
+    <linearGradient id="seamSheen" x1="0" y1="0" x2="0" y2="256" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff" stop-opacity=".16"/>
+      <stop offset=".55" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="256" height="256" rx="58" fill="url(#seamBg)"/>
+  <rect width="256" height="256" rx="58" fill="url(#seamSheen)"/>
+
+  <!-- The two sides. Open towards each other: neither is closed off, and
+       neither contains the other. -->
+  <g stroke="#cfe0ff" stroke-width="15" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M96 68 H74 a22 22 0 0 0 -22 22 V166 a22 22 0 0 0 22 22 H96"/>
+    <path d="M160 68 H182 a22 22 0 0 1 22 22 V166 a22 22 0 0 1 -22 22 H160"/>
+  </g>
+
+  <!-- The seam itself: a running stitch, not a divider. Even dashes, so it
+       reads as something holding the two together rather than a wall between
+       them. -->
+  <path d="M128 44 V212" stroke="#ffffff" stroke-width="16" stroke-linecap="round"
+        stroke-dasharray="22 24"/>
+</svg>
