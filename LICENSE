@@ -1,0 +1,35 @@
+Seam
+Copyright (c) 2026 Georgi Daniel
+
+ALL RIGHTS RESERVED.
+
+This software and its accompanying material are proprietary. No licence is
+granted by publication, by making a copy available for evaluation, or by any
+other means except a signed written agreement with the copyright holder.
+
+Without such an agreement you may not use, copy, modify, merge, publish,
+distribute, sublicense or sell any part of this work, and you may not create
+derivative works from it. Reading the source, where it has been made available
+for evaluation, does not grant any of those rights.
+
+The work is offered for sale as an exclusive transfer of rights: on completion
+of that sale the copyright and all associated rights pass to the buyer in full,
+and the seller retains none. It is not being licensed to multiple parties.
+
+Third-party components: none, beyond Flask and waitress, which are listed in
+requirements.txt and remain under their own licences (BSD-3-Clause and ZPL 2.1
+respectively). Everything else in this repository was written by the copyright
+holder.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+The documents this software generates - contracts, protocols, powers of
+attorney, data-processing declarations - are templates, not legal advice, and
+have not been reviewed by a lawyer in any jurisdiction.
+
+Enquiries: daniel.business.037@gmail.com
