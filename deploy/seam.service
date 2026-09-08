@@ -1,0 +1,38 @@
+[Unit]
+Description=Seam
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=seam
+Group=seam
+WorkingDirectory=/opt/seam
+EnvironmentFile=/opt/seam/seam.env
+ExecStart=/opt/seam/.venv/bin/python /opt/seam/app.py
+Restart=always
+RestartSec=3
+
+# The process needs its own directory and nothing else on the disk. If it is
+# ever made to run something it should not, this is what limits the damage.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/seam
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+# Outbound only: SMTP, the alert hook, the payment processor. Nothing here
+# needs to listen on anything but the loopback port it binds itself.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=seam
+
+[Install]
+WantedBy=multi-user.target

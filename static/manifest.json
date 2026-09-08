@@ -1,0 +1,15 @@
+{
+  "name": "Seam — shared operational layer",
+  "short_name": "Seam",
+  "description": "The shared workspace for high-demand businesses and the partners they depend on: suppliers, fulfilment, subcontractors and B2B clients.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f131b",
+  "theme_color": "#2f6df0",
+  "lang": "en",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/static/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" }
+  ]
+}

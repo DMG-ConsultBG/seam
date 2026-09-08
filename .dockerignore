@@ -1,0 +1,41 @@
+# What must never be baked into an image.
+#
+# The Dockerfile ends with `COPY . .`, so without this file the image would
+# carry the development database, the uploads in it, and - worst - the key that
+# signs session cookies. An image is pushed to a registry and pulled by anyone
+# who can reach it; a key inside one is a key given away.
+
+# Keys and provider credentials. These belong on the running machine only, and
+# are generated there on first start if absent.
+.secret
+.data_key
+.vapid_keys
+.ref_keys
+.smtp_config
+.stripe_key
+.qtsp_config
+.eid_config
+.ai_config
+seam.env
+
+# The database and everything uploaded into it. These live on the mounted
+# volume at /data, not in the image.
+seam.db
+seam.db-wal
+seam.db-shm
+uploads/
+backups/
+
+# Local Python, never the right build for the image's base.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Not needed at runtime, and they make the image bigger and the build slower.
+tests/
+marketing/
+.git/
+.gitignore
+*.md
+!DEPLOY.md

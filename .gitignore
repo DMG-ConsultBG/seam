@@ -1,0 +1,45 @@
+# What must never be committed.
+#
+# The keys below are generated on first start and are specific to one
+# installation. `.secret` signs session cookies; `.data_key` is what makes the
+# encrypted columns readable at all. Either one in a public repository is a
+# complete compromise of any instance using it, and git remembers: a key
+# pushed once stays in the history after it is deleted.
+
+.secret
+.data_key
+.vapid_keys
+.ref_keys
+.smtp_config
+.stripe_key
+.qtsp_config
+.eid_config
+.ai_config
+seam.env
+
+# The database and everything uploaded into it. Contains demo companies, test
+# accounts and whatever has been tried out locally.
+seam.db
+seam.db-wal
+seam.db-shm
+uploads/
+backups/
+
+# Local Python.
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Test leftovers.
+tests/_restored.db
+tests/load_check.json
+
+# Editors and operating systems.
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini

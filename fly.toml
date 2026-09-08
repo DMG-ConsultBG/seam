@@ -1,0 +1,47 @@
+# Fly.io. Change `app` to a name nobody has taken, and `primary_region` to one
+# near the companies who will use this (ams = Amsterdam, fra = Frankfurt,
+# waw = Warsaw, otp = Bucharest).
+app = "seam-change-this"
+primary_region = "fra"
+
+[build]
+  dockerfile = "deploy/Dockerfile"
+
+[env]
+  PORT = "8080"
+  SEAM_BACKUP_DAILY = "1"
+
+# The whole point of this block. SQLite lives on a disk, and a container
+# filesystem is thrown away on every deploy: without a volume the database and
+# every uploaded document disappear the first time this restarts.
+[[mounts]]
+  source = "seam_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false     # a stopped machine takes no backups and
+  auto_start_machines = true     # answers no reminders
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 40
+    hard_limit = 80
+
+# Fly restarts a machine that stops answering. /healthz needs no session and
+# says nothing beyond whether the database can be read and written.
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "20s"
+  method = "GET"
+  path = "/healthz"
+
+# One machine, because SQLite has one writer. Scaling this app means a bigger
+# machine, not more of them - two would each have their own database file and
+# the companies on one would not exist for the other.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
