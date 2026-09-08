@@ -92,30 +92,68 @@ def main():
                        json.dumps({"name": pname}, ensure_ascii=False)))
             return ws, pu, po
 
-        def add_order(ws, tpl_key, pu, po, ref, title, status, fields, terms, events, comments, notify=None):
+        def stamp(days_ago):
+            """A timestamp `days_ago` days back, in the format SQLite writes."""
+            return (datetime.datetime.utcnow()
+                    - datetime.timedelta(days=days_ago)).isoformat(" ", "seconds")
+
+        def due(days):
+            """A date `days` from today, negative for the past.
+
+            Agreed dates used to be written as fixed literals, which meant that
+            some months after this file was last touched every deadline in the
+            demo was overdue and some fell before the record that carried them
+            was opened. A deadline is only meaningful relative to now.
+            """
+            return (datetime.date.today() + datetime.timedelta(days=days)).isoformat()
+
+        def add_order(ws, tpl_key, pu, po, ref, title, status, fields, terms, events, comments,
+                      notify=None, ago=0, quiet=0):
+            # `ago` is how many days back the record was opened, `quiet` how
+            # long ago the last thing happened to it. Everything in between is
+            # spread evenly across that span, oldest first.
+            #
+            # Without this every event carried the same timestamp, which is why
+            # the analytics screen showed an average cycle of nothing and a time
+            # to agreement of zero days: the figures were right, the data simply
+            # had no history to measure. A demo of a platform whose whole
+            # subject is elapsed time cannot happen entirely in one instant.
+            span = max(0.0, float(ago) - float(quiet))
+            step = span / max(1, len(events) - 1) if len(events) > 1 else 0.0
+            at = lambda i: max(0.0, ago - step * i)          # noqa: E731
             oid = c.execute(
-                "INSERT INTO orders (workspace_id,ref,title,template,status,fields_json,created_by) VALUES (?,?,?,?,?,?,?)",
-                (ws, ref, title, tpl_key, status, json.dumps(fields, ensure_ascii=False), biz_u),
+                "INSERT INTO orders (workspace_id,ref,title,template,status,fields_json,created_by,"
+                "created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                (ws, ref, title, tpl_key, status, json.dumps(fields, ensure_ascii=False), biz_u,
+                 stamp(ago), stamp(at(len(events) - 1) if events else ago)),
             ).lastrowid
+            when = {}
+            for i, (_side, kind, meta) in enumerate(events):
+                when.setdefault(kind, []).append(at(i))
+
             for k, (val, state, side) in terms.items():
                 org = biz_o if side == "buyer" else po
                 uid = biz_u if side == "buyer" else pu
                 # An agreed term carries the day it was settled, exactly as it
-                # would if the two sides had clicked accept.
-                c.execute("INSERT INTO order_terms (order_id,key,value,state,proposed_by_org,updated_by,agreed_at) "
-                          "VALUES (?,?,?,?,?,?,?)",
+                # would if the two sides had clicked accept - which is the day
+                # the matching term_agreed event was written, not today.
+                agreed = (when.get("term_agreed") or [None])[0]
+                c.execute("INSERT INTO order_terms (order_id,key,value,state,proposed_by_org,updated_by,"
+                          "updated_at,agreed_at) VALUES (?,?,?,?,?,?,?,?)",
                           (oid, k, val, state, org, uid,
-                           datetime.datetime.utcnow().isoformat(" ", "seconds")
-                           if state == "agreed" else None))
-            for (side, kind, meta) in events:
+                           stamp(agreed if agreed is not None else 0),
+                           stamp(agreed if agreed is not None else 0) if state == "agreed" else None))
+            for i, (side, kind, meta) in enumerate(events):
                 uid = biz_u if side == "buyer" else pu
                 m = dict(meta or {})
                 if kind == "order_created":
                     m = {"ref": ref, "title": title}
                 elif kind in ("status_changed", "term_proposed", "term_agreed", "field_updated"):
                     m.setdefault("tpl", tpl_key)
-                c.execute("INSERT INTO events (workspace_id,order_id,actor_user_id,actor_side,kind,summary,meta_json) VALUES (?,?,?,?,?,?,?)",
-                          (ws, oid, uid, side, kind, kind, json.dumps(m, ensure_ascii=False)))
+                c.execute("INSERT INTO events (workspace_id,order_id,actor_user_id,actor_side,kind,summary,"
+                          "meta_json,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                          (ws, oid, uid, side, kind, kind, json.dumps(m, ensure_ascii=False),
+                           stamp(at(i))))
             for (side, b) in comments:
                 uid = biz_u if side == "buyer" else pu
                 c.execute("INSERT INTO comments (order_id,user_id,body) VALUES (?,?,?)", (oid, uid, b))
@@ -134,24 +172,50 @@ def main():
         add_order(ws1, "general", pu1, po1, "REQ-0001", "§o_packaging", "in_progress",
                   {"summary": "§f_boxes", "reference": "PO-2241", "quantity": "§f_qty_boxes"},
                   {"price": ("EUR 1950", "agreed", "partner"),
-                   "deadline": ("2026-07-05", "agreed", "buyer"),
+                   "deadline": (due(11), "agreed", "buyer"),
                    "scope": ("§t_scope_dc", "agreed", "partner")},
                   [("buyer", "order_created", {}),
                    ("partner", "term_proposed", {"term": "price", "old": "", "new": "EUR 1950"}),
                    ("buyer", "term_agreed", {"term": "price", "value": "EUR 1950"}),
                    ("buyer", "status_changed", {"from": "requested", "to": "accepted"}),
                    ("partner", "status_changed", {"from": "accepted", "to": "in_progress"})],
-                  [("buyer", "§c_friday"), ("partner", "§c_gradea")])
+                  [("buyer", "§c_friday"), ("partner", "§c_gradea")],
+                  ago=26, quiet=3)
 
         add_order(ws1, "general", pu1, po1, "REQ-0002", "§o_pallets", "review",
                   {"summary": "§f_pallets", "reference": "PO-2248", "quantity": "§f_qty_pallets"},
                   {"price": ("EUR 2900", "proposed", "partner"),
-                   "deadline": ("2026-07-12", "proposed", "partner")},
+                   "deadline": (due(18), "proposed", "partner")},
                   [("buyer", "order_created", {}),
                    ("partner", "term_proposed", {"term": "price", "old": "", "new": "EUR 2900"}),
                    ("buyer", "status_changed", {"from": "requested", "to": "review"})],
                   [("partner", "§c_gradea")],
-                  notify=[(biz_u, "term_proposed", {"term": "price"})])
+                  notify=[(biz_u, "term_proposed", {"term": "price"})],
+                  ago=9, quiet=1)
+
+        # Two records that went the whole way. Without at least one of these the
+        # analytics screen has no completion rate, no cycle time and nothing on
+        # the closed side of its chart, which makes the product look like it
+        # cannot measure the thing it exists to measure.
+        add_order(ws1, "general", pu1, po1, "REQ-0003", "§o_shelving", "closed",
+                  {"summary": "§f_shelving", "reference": "PO-2203",
+                   "quantity": "§f_qty_shelving"},
+                  {"price": ("EUR 4750", "agreed", "partner"),
+                   # Met three days early, which is what makes the on-time
+                   # figure on the reference card a measurement rather than
+                   # a claim.
+                   "deadline": (due(-35), "agreed", "buyer"),
+                   "scope": ("§t_scope_dc", "agreed", "partner")},
+                  [("buyer", "order_created", {}),
+                   ("partner", "term_proposed", {"term": "price", "old": "", "new": "EUR 4750"}),
+                   ("buyer", "term_agreed", {"term": "price", "value": "EUR 4750"}),
+                   ("buyer", "status_changed", {"from": "requested", "to": "accepted"}),
+                   ("partner", "status_changed", {"from": "accepted", "to": "in_progress"}),
+                   ("partner", "status_changed", {"from": "in_progress", "to": "review"}),
+                   ("buyer", "status_changed", {"from": "review", "to": "completed"}),
+                   ("buyer", "status_changed", {"from": "completed", "to": "closed"})],
+                  [("buyer", "§c_received_ok")],
+                  ago=71, quiet=38)
 
         # workspace-level communication demo
         c.execute("INSERT INTO ws_messages (workspace_id,user_id,body) VALUES (?,?,?)", (ws1, biz_u, "§m_kickoff"))
@@ -168,7 +232,8 @@ def main():
                   [("buyer", "order_created", {}),
                    ("partner", "status_changed", {"from": "received", "to": "picking"}),
                    ("partner", "status_changed", {"from": "picking", "to": "shipped"})],
-                  [("partner", "§c_sla_ok")])
+                  [("partner", "§c_sla_ok")],
+                  ago=17, quiet=2)
 
         add_order(ws2, "ecommerce", pu2, po2, "FUL-0002", "§o_returns", "exception",
                   {"order_ref": "RET-26", "units": "17", "notes": "§f_damaged"},
@@ -176,7 +241,22 @@ def main():
                   [("buyer", "order_created", {}),
                    ("partner", "status_changed", {"from": "received", "to": "exception"})],
                   [("partner", "§c_damaged_q"), ("buyer", "§c_scrap")],
-                  notify=[(biz_u, "status_changed", {"to": "exception"})])
+                  notify=[(biz_u, "status_changed", {"to": "exception"})],
+                  ago=21, quiet=19)
+
+        add_order(ws2, "ecommerce", pu2, po2, "FUL-0003", "§o_batch_w22", "closed",
+                  {"order_ref": "#4318", "units": "410", "destination": "§f_dest_eu"},
+                  {"price": ("EUR 1380", "agreed", "partner"),
+                   "sla": ("§t_sla_24", "agreed", "buyer")},
+                  [("buyer", "order_created", {}),
+                   ("partner", "term_proposed", {"term": "price", "old": "", "new": "EUR 1380"}),
+                   ("buyer", "term_agreed", {"term": "price", "value": "EUR 1380"}),
+                   ("partner", "status_changed", {"from": "received", "to": "picking"}),
+                   ("partner", "status_changed", {"from": "picking", "to": "shipped"}),
+                   ("partner", "status_changed", {"from": "shipped", "to": "delivered"}),
+                   ("buyer", "status_changed", {"from": "delivered", "to": "closed"})],
+                  [("partner", "§c_delivered_ok")],
+                  ago=52, quiet=31)
 
         # =================================================================
         #  3) Construction <-> subcontractor
@@ -185,24 +265,26 @@ def main():
         so1 = add_order(ws3, "construction", pu3, po3, "SUB-0001", "§o_counter", "in_progress",
                   {"work_item": "§f_counter", "location": "§f_loc_mall"},
                   {"price": ("EUR 12400", "agreed", "partner"),
-                   "milestone_date": ("2026-07-15", "agreed", "buyer"),
+                   "milestone_date": (due(27), "agreed", "buyer"),
                    "payment_terms": ("§t_pay_5050", "agreed", "buyer"),
                    "scope": ("§t_scope_full", "agreed", "partner")},
                   [("buyer", "order_created", {}),
                    ("partner", "term_proposed", {"term": "price", "old": "", "new": "EUR 12400"}),
                    ("buyer", "term_agreed", {"term": "price", "value": "EUR 12400"}),
                    ("buyer", "status_changed", {"from": "quoted", "to": "in_progress"})],
-                  [("buyer", "§c_night")])
+                  [("buyer", "§c_night")],
+                  ago=34, quiet=4)
 
         add_order(ws3, "construction", pu3, po3, "SUB-0002", "§o_electrical", "quoted",
                   {"work_item": "§f_electrical", "location": "§f_loc_store_b",
                    "spec": "§f_spec_electrical"},
                   {"price": ("EUR 8900", "proposed", "partner"),
-                   "milestone_date": ("2026-07-28", "proposed", "partner")},
+                   "milestone_date": (due(46), "proposed", "partner")},
                   [("buyer", "order_created", {}),
                    ("partner", "term_proposed", {"term": "price", "old": "", "new": "EUR 8900"})],
                   [("partner", "§c_cert")],
-                  notify=[(biz_u, "term_proposed", {"term": "price"})])
+                  notify=[(biz_u, "term_proposed", {"term": "price"})],
+                  ago=6, quiet=1)
 
         # -----------------------------------------------------------------
         #  Progress-evidence demo: two "site photos" on SUB-0001, uploaded
@@ -332,6 +414,112 @@ def main():
             c.execute("UPDATE orgs SET pay_iban=?, pay_bic=?, pay_bank=?, pay_terms=30, "
                       "sectors_json=? WHERE id=?",
                       (iban, bic, bank, json.dumps(sectors), org_id))
+
+        # The retailer and its building subcontractor are on a plan; the other
+        # two partners are not. A demo where everyone is on the free tier puts a
+        # "buy this part" panel over half the product, so the screen that shows
+        # per-country tax and filing shows a paywall instead of a calculation.
+        # Leaving two companies unsubscribed keeps the other side of the gate
+        # visible, which is the half that has to be believable too.
+        #
+        # This is the instance operator seeding its own showcase, not a company
+        # claiming to have paid: the rule that a plan is only ever opened by a
+        # signed webhook, a processor answer or a recorded transfer governs the
+        # running application, and is not weakened by what a local script writes
+        # into a demo database it just created.
+        for org_id in (biz_o, po3):
+            c.execute("UPDATE orgs SET plan='year', plan_until=? WHERE id=?",
+                      (due(300), org_id))
+
+        # --- published directory profiles ---------------------------------
+        # Without these the directory is an empty page with a filter bar on
+        # top, which is exactly what the feature does not do. Every company
+        # here has the four things profiles.may_list insists on, so each one
+        # reaches the "listed" tier honestly rather than by setting the flag.
+        #
+        # The text is English, like the company names it belongs to: these are
+        # the fictional companies' own words, not interface strings, and the
+        # chrome around them still comes up in whichever language is chosen.
+        for org_id, posture, headline, about, size, founded, areas, email in (
+                (biz_o, "seeking",
+                 "Retail chain, 40 stores across Bulgaria and Romania",
+                 "We run forty stores and buy shop fit-outs, logistics and "
+                 "seasonal supply on framework agreements. We pay on thirty "
+                 "days and expect a delivery note against every order.",
+                 "large", "2009", ["BG", "RO"], "ops@nordic-retail.example"),
+                (po1, "offering",
+                 "Wholesale packaging and shop consumables",
+                 "Pallets, shelving consumables and packaging from stock, with "
+                 "next-day delivery inside Bulgaria. Thirty years of supplying "
+                 "retail chains, and a standing line for urgent replacements.",
+                 "medium", "1994", ["BG"], "sales@global-supply.example"),
+                (po2, "offering",
+                 "Third-party fulfilment for online stores",
+                 "We pick, pack and ship for online retailers from two "
+                 "warehouses in the Netherlands. Same-day dispatch on orders "
+                 "placed before four, and returns handled end to end.",
+                 "medium", "2016", ["NL", "BE", "DE"], "hello@speedlogic.example"),
+                (po3, "both",
+                 "Electrical and fit-out works for commercial sites",
+                 "A crew of eighteen doing electrical installation, lighting "
+                 "and interior fit-out for shops and offices. Licensed, "
+                 "insured, and used to working nights inside a trading store.",
+                 "small", "2011", ["BG"], "office@buildpro.example")):
+            c.execute("UPDATE orgs SET posture=?, headline=?, about=?, size_band=?, "
+                      "founded=?, areas_json=?, contact_email=?, listed=1 WHERE id=?",
+                      (posture, headline, about, size, founded,
+                       json.dumps(areas), email, org_id))
+
+        # Past work, so a card says what the company has actually done rather
+        # than "0 entries". Value bands, never figures: reference.py explains
+        # why a portfolio may not become a price list.
+        for org_id, kind, title, summary, role, place, year, band in (
+                (po1, "project", "Packaging line for a 40-store chain",
+                 "Standing supply of pallets, stretch film and shelf "
+                 "consumables, replenished weekly against a rolling forecast.",
+                 "Supplier", "Sofia", "2024", "50-100k"),
+                (po1, "certificate", "ISO 9001:2015",
+                 "Quality management, audited annually.", "Certificate holder",
+                 "Sofia", "2023", None),
+                (po1, "equipment", "Two 12t trucks and a 3,000 m2 warehouse",
+                 "Own fleet, so a replacement pallet is on site the same day.",
+                 "Owner", "Sofia", "2022", None),
+                (po2, "project", "Fulfilment for a Dutch fashion retailer",
+                 "Pick, pack and ship for 1,200 orders a day in season, with "
+                 "returns processed inside 24 hours.",
+                 "3PL provider", "Rotterdam", "2025", "100-250k"),
+                (po2, "project", "Cross-border dispatch to DE and BE",
+                 "Two-warehouse split so an order ships from whichever side of "
+                 "the border is closer to the customer.",
+                 "3PL provider", "Venlo", "2024", "50-100k"),
+                (po2, "certificate", "GDP warehouse certification",
+                 "Good distribution practice, for temperature-controlled lines.",
+                 "Certificate holder", "Venlo", "2024", None),
+                (po3, "project", "Full electrical fit-out, 900 m2 store",
+                 "Distribution boards, lighting and data cabling, done in "
+                 "night shifts while the store stayed open.",
+                 "Main electrical contractor", "Plovdiv", "2025", "25-50k"),
+                (po3, "licence", "Part P electrical licence",
+                 "Registered for commercial installation work.",
+                 "Licence holder", "Plovdiv", "2019", None),
+                (po3, "project", "Lighting refit across six branches",
+                 "LED conversion with the measured saving handed over on paper.",
+                 "Subcontractor", "Burgas", "2024", "10-25k"),
+                (biz_o, "project", "Framework buying for 40 stores",
+                 "Fit-out, logistics and seasonal supply bought on frameworks "
+                 "rather than one purchase order at a time.",
+                 "Buyer", "Sofia", "2025", "250k+"),
+                (biz_o, "award", "Retailer of the year, regional",
+                 "Awarded for the 2024 store programme.", "Recipient",
+                 "Sofia", "2024", None)):
+            # Filed by that company's own owner, not by the retailer: an entry
+            # created_by somebody outside the org is a row no screen could
+            # have produced.
+            c.execute(
+                "INSERT INTO portfolio (org_id, kind, title, summary, role, place, "
+                "year, value_band, created_by) VALUES (?,?,?,?,?,?,?,?,?)",
+                (org_id, kind, title, summary, role, place, year, band,
+                 {biz_o: biz_u, po1: pu1, po2: pu2, po3: pu3}[org_id]))
 
         def invoice(seller, ws, order, number, net, issued, due, status,
                     paid_on=None, reminders=0, lines=()):

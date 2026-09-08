@@ -5,8 +5,9 @@ Every image this produces is the running application against the seeded demo
 data - no mockups, no retouching, nothing that promises a screen the customer
 will not find. If a shot looks wrong, the fix belongs in the product.
 
-    .venv\\Scripts\\python marketing\\shoot.py            # everything
-    .venv\\Scripts\\python marketing\\shoot.py --lang en  # in English
+    .venv\\Scripts\\python marketing\\shoot.py             # everything, in Bulgarian
+    .venv\\Scripts\\python marketing\\shoot.py --lang en   # in English
+    .venv\\Scripts\\python marketing\\shoot.py --lang all  # all thirteen
     .venv\\Scripts\\python marketing\\shoot.py --base http://127.0.0.1:5000
 
 Output lands in marketing/shots/ as PNG, at twice the pixel density so the
@@ -31,7 +32,12 @@ DEMO = {"email": "ops@seam.demo", "password": "demo1234"}
 #: from the subcontractor's account so the feature is photographed from the side
 #: that uses it.
 SUPPLIER = {"email": "build@seam.demo", "password": "demo1234"}
-SUPPLIER_SCREENS = [("receivables", "#/money", "main")]
+#: Taxes and profit belong here for the same reason: revenue is what a company
+#: invoiced, and the retailer in this demo is the one being invoiced. Shot from
+#: the buyer's side the whole calculation is a column of zeros - correct, and
+#: showing nothing at all about what the screen does.
+SUPPLIER_SCREENS = [("receivables", "#/money", "main"),
+                    ("finance", "#/finance", "main")]
 
 #: Shot before signing in. These were missing, which meant the one screen a
 #: stranger actually meets first was the only one never photographed.
@@ -53,6 +59,14 @@ SCREENS = [
     ("integrations", "#/integrations", "main"),
     ("store",        "#/store",       "main"),
     ("plans",        "#/plans",       "main"),
+    # The screens a buyer asks about by name. Profiles and the directory are
+    # the newest surface and the one that explains the network side; finance is
+    # where the per-country tax and filing work shows; add-ons is where the
+    # trade depth is chosen.
+    ("profiles",     "#/directory",   "main"),
+    ("assistant",    "#/assistant",   "main"),
+    ("addons",       "#/addons",      "main"),
+    ("messages",     "#/messages",    "main"),
 ]
 
 #: The document shots are the ones a buyer actually cares about, because that
@@ -64,6 +78,12 @@ DOCS = [
 ]
 
 SIZES = [("desktop", 1280, 800, False), ("mobile", 390, 844, True)]
+
+#: Every language the interface is translated into, English first because that
+#: is the set anyone outside the country looks at. Kept in step with
+#: PUBLIC_LANGS in app.py; a language missing here is a language nobody sees.
+ALL_LANGS = ("en", "bg", "de", "ro", "el", "tr", "it", "ru", "es", "fr",
+             "pl", "uk", "pt")
 
 
 def set_language(b, base, lang):
@@ -127,13 +147,37 @@ def live_routes(b):
       })()""", wait=True)
     if not found:
         return []
-    return [("workspace", "#/w/%s" % found["w"], "main"),
-            ("order",     "#/o/%s" % found["o"], "main")]
+    out = [("workspace", "#/w/%s" % found["w"], "main"),
+           ("order",     "#/o/%s" % found["o"], "main")]
+
+    # The signing page lives outside the app shell - the signer may not have an
+    # account at all - so it needs a real token rather than a hash route. Reuse
+    # a pending request if there is one, otherwise ask for a new one, because a
+    # screenshot of an empty signing page shows nothing worth showing.
+    sig = b.js("""
+      (async () => {
+        const me = await (await fetch('/api/me')).json();
+        const mk = async () => {
+          const r = await fetch('/api/signatures', {
+            method: 'POST',
+            headers: {'content-type': 'application/json', 'X-CSRF': me.csrf},
+            credentials: 'same-origin',
+            body: JSON.stringify({order_id: %s, doc_kind: 'protocol', level: 'simple',
+                                  signer_name: 'David Marin',
+                                  signer_email: 'build@seam.demo'})});
+          const j = await r.json().catch(() => ({}));
+          return j.token || null;
+        };
+        return await mk();
+      })()""" % found["o"], wait=True)
+    if sig:
+        out.append(("signing", "/sign/" + sig, "main, form, .sign-wrap"))
+    return out
 
 
-def capture(base, lang, outdir, only=None):
+def capture(base, lang, outdir, only=None, sizes=None):
     made = []
-    for label, width, height, mobile in SIZES:
+    for label, width, height, mobile in (sizes or SIZES):
         b = cdp.Browser(port=9222 + len(made), width=width, height=height)
         try:
             b.resize(width, height, mobile=mobile, scale=2)
@@ -157,7 +201,8 @@ def capture(base, lang, outdir, only=None):
             for name, route, needs in SCREENS + live_routes(b):
                 if only and name not in only:
                     continue
-                b.go(base + "/" + route, settle=0.4)
+                b.go(base + route if route.startswith("/") else base + "/" + route,
+                     settle=0.4)
                 b.wait_for(needs)
                 # The interface settles after its first data arrives; a short
                 # extra beat is the difference between a chart and an empty box.
@@ -166,6 +211,16 @@ def capture(base, lang, outdir, only=None):
                 size = b.shot(path)
                 made.append((os.path.basename(path), size))
                 print("  %-34s %6.1f kB" % (os.path.basename(path), size / 1024.0))
+            if not only or "language" in only:
+                b.go(base + "/#/", settle=0.6)
+                b.wait_for("#langBtn")
+                b.js("document.querySelector('#langBtn').click()")
+                time.sleep(0.9)
+                path = os.path.join(outdir, "language-%s-%s.png" % (label, lang))
+                size = b.shot(path)
+                made.append((os.path.basename(path), size))
+                print("  %-34s %6.1f kB" % (os.path.basename(path), size / 1024.0))
+
             for name, tmpl in DOCS:
                 if only and name not in only:
                     continue
@@ -202,12 +257,20 @@ def main():
     ap.add_argument("--lang", default="bg")
     ap.add_argument("--out", default=os.path.join(HERE, "shots"))
     ap.add_argument("--only", default="")
+    ap.add_argument("--size", default="both", choices=["both", "desktop", "mobile"],
+                    help="a listing gallery is a handful of desktop shots, not "
+                         "every screen twice over")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
     only = set(x.strip() for x in args.only.split(",") if x.strip())
-    print("shooting %s in %s" % (args.base, args.lang))
-    made = capture(args.base, args.lang, args.out, only or None)
+    langs = ALL_LANGS if args.lang in ("all", "*") else [args.lang]
+    sizes = [s for s in SIZES if args.size in ("both", s[0])]
+
+    made = []
+    for lang in langs:
+        print("shooting %s in %s" % (args.base, lang))
+        made += capture(args.base, lang, args.out, only or None, sizes)
     print("\n%d images in %s" % (len(made), args.out))
     thin = [n for n, s in made if s < 12000]
     if thin:
